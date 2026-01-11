@@ -2,20 +2,21 @@
 import { GoogleGenAI } from "@google/genai";
 import { Store, Location } from "../types";
 
-const genAI = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-
 export const fetchNearbyStores = async (location: Location): Promise<Store[]> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const prompt = `Find the 5 closest liquor stores, beer stores, or wine shops near these coordinates: ${location.latitude}, ${location.longitude}. 
-  For each store, I need:
-  1. Store Name
-  2. Full Address
-  3. Current Status (Open or Closed)
-  4. Exact Closing Time for today (e.g., 9:00 PM)
-  5. Distance from coordinates if available.
+  For each store, provide:
+  1. Name
+  2. Address
+  3. Status (Open or Closed)
+  4. Closing Time (Today) in clean H:MM AM/PM format.
   
-  Format the results as a clear list. Ensure you use the latest data from Google Maps.`;
+  IMPORTANT: 
+  - Do NOT use markdown like ** or # in your response. 
+  - Return each store in a clear, separate block.
+  - Ensure the closing time is strictly like "9:00 PM" or "12:00 AM".
+  - Use Google Maps data for accuracy.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -35,11 +36,8 @@ export const fetchNearbyStores = async (location: Location): Promise<Store[]> =>
     });
 
     const text = response.text || "";
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    
-    // Parse the text response into structured objects
-    // Since we can't use responseSchema with googleMaps, we parse the LLM's text output
-    const stores: Store[] = parseGeminiResponse(text, chunks);
+    // We construct a list of store objects by parsing the text
+    const stores: Store[] = parseGeminiResponse(text);
     
     return stores;
   } catch (error) {
@@ -48,45 +46,56 @@ export const fetchNearbyStores = async (location: Location): Promise<Store[]> =>
   }
 };
 
-const parseGeminiResponse = (text: string, chunks: any[]): Store[] => {
-  const lines = text.split('\n').filter(l => l.trim().length > 0);
+const parseGeminiResponse = (text: string): Store[] => {
   const stores: Store[] = [];
   
-  // Basic heuristic parsing for the markdown/text response
-  // We'll also use the grounding chunks to get URLs
+  // Strip all markdown artifacts immediately to prevent formatting issues
+  const cleanText = text.replace(/[\*#_]/g, '');
   
-  // Let's try to extract items that look like store entries
-  // In a real app, we might use a more robust regex or secondary AI pass for structured JSON
-  // but for this implementation, we'll parse common patterns
-  
-  const storeBlocks = text.split(/\d\.\s+/).slice(1);
+  // Split by items that look like "1. Name", "2. Name" etc.
+  const storeBlocks = cleanText.split(/\d+\.\s+/).filter(block => block.trim().length > 0);
   
   storeBlocks.forEach((block, index) => {
-    const lines = block.split('\n');
-    const name = lines[0].replace(/\*\*/g, '').trim();
-    const address = lines.find(l => l.toLowerCase().includes('address'))?.split(':')[1]?.trim() || "Address not found";
-    const closingTime = lines.find(l => l.toLowerCase().includes('closing'))?.split(':')[1]?.trim() || "Check hours";
-    const statusText = lines.find(l => l.toLowerCase().includes('status'))?.toLowerCase() || "";
+    const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length < 2) return;
+
+    const name = lines[0].trim();
+    
+    const findValue = (keywords: string[]) => {
+      const line = lines.find(l => keywords.some(k => l.toLowerCase().includes(k)));
+      if (!line) return null;
+      const parts = line.split(':');
+      if (parts.length < 2) return line; // Return full line if no colon
+      return parts.slice(1).join(':').trim();
+    };
+
+    const address = findValue(['address']) || "Address unknown";
+    const closingTime = findValue(['closing', 'time']) || "Check hours";
+    const statusText = findValue(['status'])?.toLowerCase() || "";
     
     let status: 'Open' | 'Closed' | 'Closing Soon' = 'Open';
-    if (statusText.includes('closed')) status = 'Closed';
+    if (statusText.includes('closed')) {
+      status = 'Closed';
+    }
     
-    // Calculate urgency based on keywords or current time (simplified)
+    // Heuristic for urgency
     let urgency: 'low' | 'medium' | 'high' = 'low';
-    if (status === 'Open' && (closingTime.toLowerCase().includes('pm') || closingTime.toLowerCase().includes('am'))) {
-       // Logic to check if closing is within 1 hour would go here
-       // For demo, if it mentions "PM" and current time is evening, mark as medium/high
-       const now = new Date();
-       if (now.getHours() >= 20) urgency = 'high';
-       else if (now.getHours() >= 17) urgency = 'medium';
+    if (status === 'Open') {
+      const now = new Date();
+      const currentHour = now.getHours();
+      
+      // If it's late or the text mentions "soon"
+      if (currentHour >= 21 || block.toLowerCase().includes('soon')) urgency = 'high';
+      else if (currentHour >= 18) urgency = 'medium';
     }
 
-    // Try to find a matching grounding URL
-    const mapUrl = chunks[index]?.maps?.uri || `https://www.google.com/maps/search/${encodeURIComponent(name + ' ' + address)}`;
+    // Construct a high-accuracy Google Maps URL using specific name and address
+    // This avoids the "wrong store" issue caused by index mismatch in grounding chunks
+    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${name} ${address}`)}`;
 
-    if (name) {
+    if (name && name.length > 2) {
       stores.push({
-        id: `store-${index}`,
+        id: `store-${index}-${Date.now()}`,
         name,
         address,
         status,

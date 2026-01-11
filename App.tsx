@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Store, Location, AppState } from './types';
 import { fetchNearbyStores } from './services/geminiService';
 import { StoreCard } from './components/StoreCard';
@@ -38,9 +38,10 @@ const App: React.FC = () => {
         setState(prev => ({ 
           ...prev, 
           loading: false, 
-          error: "Unable to retrieve your location. Please check your permissions." 
+          error: "Permission denied. We need location to find nearby stores." 
         }));
-      }
+      },
+      { enableHighAccuracy: true }
     );
   }, []);
 
@@ -60,104 +61,173 @@ const App: React.FC = () => {
       };
       loadStores();
     }
-  }, [state.location]);
+  }, [state.location, refreshKey]);
 
   const handleRefresh = () => {
     setRefreshKey(prev => prev + 1);
   };
 
+  // Grouping and Sorting Logic
+  const { openStores, closedStores } = useMemo(() => {
+    const open = state.stores.filter(s => s.status === 'Open').sort((a, b) => {
+      // Prioritize "high urgency" (closing soonest)
+      if (a.urgency === 'high' && b.urgency !== 'high') return -1;
+      if (b.urgency === 'high' && a.urgency !== 'high') return 1;
+      return 0;
+    });
+    const closed = state.stores.filter(s => s.status === 'Closed');
+    return { openStores: open, closedStores: closed };
+  }, [state.stores]);
+
+  const allClosed = openStores.length === 0 && state.stores.length > 0;
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-slate-900/80 backdrop-blur-md border-b border-white/5 p-4 shadow-2xl">
-        <div className="max-w-4xl mx-auto flex justify-between items-center">
-          <div className="flex items-center space-x-2">
-            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+    <div className="min-h-screen bg-[#080A0F] text-slate-100 flex flex-col font-sans selection:bg-indigo-500/30">
+      {/* Navbar */}
+      <nav className="sticky top-0 z-50 bg-[#080A0F]/60 backdrop-blur-2xl px-6 py-6 border-b border-white/[0.03]">
+        <div className="max-w-6xl mx-auto flex justify-between items-center">
+          <div className="flex items-center space-x-4">
+            <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-indigo-600/40">
               <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
             <div>
-              <h1 className="text-xl font-black tracking-tight leading-none">LAST CALL</h1>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em]">Liquor Store Tracker</p>
+              <h1 className="text-xl font-black tracking-tighter text-white uppercase italic leading-none">Last Call</h1>
+              <span className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Real-time spirits</span>
             </div>
           </div>
           
           <button 
             onClick={handleRefresh}
             disabled={state.loading}
-            className="p-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-lg transition-all border border-white/5"
+            className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.08] transition-all disabled:opacity-30"
           >
-            <svg className={`w-5 h-5 ${state.loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className={`w-5 h-5 text-slate-400 ${state.loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
         </div>
-      </header>
+      </nav>
 
       {/* Main Content */}
-      <main className="flex-1 w-full max-w-4xl mx-auto p-4 md:p-6 pb-24">
+      <main className="flex-1 w-full max-w-6xl mx-auto px-6 py-12">
         {state.error && (
-          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-2xl text-red-400 flex items-center">
-            <svg className="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <p>{state.error}</p>
-          </div>
-        )}
-
-        {!state.location && !state.error && (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mb-6 animate-pulse">
-              <svg className="w-10 h-10 text-indigo-400" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+          <div className="mb-10 p-6 bg-rose-500/5 border border-rose-500/20 rounded-3xl text-rose-400 text-sm font-medium flex items-center">
+            <div className="w-10 h-10 bg-rose-500/10 rounded-xl flex items-center justify-center mr-4 shrink-0">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold mb-2">Getting your location...</h2>
-            <p className="text-slate-400">Please allow location access to find stores near you.</p>
+            {state.error}
           </div>
         )}
 
         {state.loading && state.location && (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-             <div className="w-16 h-16 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mb-6"></div>
-             <h2 className="text-2xl font-bold mb-2">Searching Nearby Stores</h2>
-             <p className="text-slate-400">Scanning for the best liquor, wine, and beer shops...</p>
+          <div className="flex flex-col items-center justify-center py-40">
+             <div className="relative w-16 h-16 mb-8">
+               <div className="absolute inset-0 border-[3px] border-indigo-500/10 rounded-full"></div>
+               <div className="absolute inset-0 border-[3px] border-t-indigo-500 rounded-full animate-spin"></div>
+             </div>
+             <p className="text-slate-500 text-xs font-black uppercase tracking-[0.3em] animate-pulse">Scanning Terrain...</p>
+          </div>
+        )}
+
+        {!state.location && !state.error && !state.loading && (
+          <div className="flex flex-col items-center justify-center py-40 text-center max-w-sm mx-auto">
+            <div className="w-20 h-20 bg-indigo-600/10 border border-indigo-500/20 rounded-[40px] flex items-center justify-center mb-8 rotate-12">
+              <svg className="w-10 h-10 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              </svg>
+            </div>
+            <h2 className="text-3xl font-black mb-4 tracking-tight">Access Required</h2>
+            <p className="text-slate-500 text-sm leading-relaxed mb-10">We need your current location to find the nearest open stores. Tap below to begin.</p>
+            <button 
+              onClick={getGeolocation} 
+              className="px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black uppercase tracking-[0.2em] rounded-2xl transition-all shadow-xl shadow-indigo-600/30"
+            >
+              Enable Location
+            </button>
           </div>
         )}
 
         {!state.loading && state.stores.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {state.stores.map((store) => (
-              <StoreCard key={store.id} store={store} />
-            ))}
-          </div>
-        )}
+          <div className="space-y-16">
+            {openStores.length > 0 && (
+              <section>
+                <div className="flex items-end justify-between mb-10">
+                  <div>
+                    <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-emerald-500 mb-2">Available Now</h2>
+                    <h3 className="text-2xl font-black tracking-tight">Nearest Open Shops</h3>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest bg-white/[0.03] px-3 py-1.5 rounded-full border border-white/5">
+                    {openStores.length} Options
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                  {openStores.map((store) => (
+                    <StoreCard key={store.id} store={store} />
+                  ))}
+                </div>
+              </section>
+            )}
 
-        {!state.loading && state.location && state.stores.length === 0 && !state.error && (
-          <div className="text-center py-20">
-            <p className="text-slate-400">No stores found nearby. Try broadening your search or checking later.</p>
+            {closedStores.length > 0 && (
+              <section className={openStores.length > 0 ? 'pt-16 border-t border-white/[0.03]' : ''}>
+                <div className="flex flex-col mb-10">
+                  <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500 mb-2">
+                    {allClosed ? 'Operational Status: Dark' : 'Too Late'}
+                  </h2>
+                  <h3 className="text-2xl font-black tracking-tight text-slate-400">
+                    {allClosed ? 'Everything is Closed' : 'Recently Shutdown'}
+                  </h3>
+                </div>
+                
+                {allClosed && (
+                  <div className="mb-12 p-10 bg-indigo-500/[0.02] border border-white/[0.03] rounded-[40px] text-center max-w-lg mx-auto">
+                    <span className="text-4xl mb-6 block">🌙</span>
+                    <h3 className="text-xl font-bold text-white mb-2">The Night has Ended.</h3>
+                    <p className="text-slate-500 text-sm leading-relaxed">It looks like the local shops are all closed for the night. Check back in the morning or try a different area.</p>
+                  </div>
+                )}
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                  {closedStores.map((store) => (
+                    <StoreCard key={store.id} store={store} isClosed={true} />
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         )}
       </main>
 
-      {/* Footer / Summary Bar */}
-      {state.stores.length > 0 && (
-        <footer className="fixed bottom-0 left-0 right-0 p-4 bg-indigo-600 shadow-[0_-10px_20px_rgba(0,0,0,0.5)] z-40">
-          <div className="max-w-4xl mx-auto flex justify-between items-center text-white">
-            <div className="flex items-center">
-              <span className="text-2xl mr-3">🏃‍♂️</span>
-              <div>
-                <p className="text-xs font-bold uppercase opacity-80 leading-none">Quickest Trip</p>
-                <p className="font-bold text-sm">Grab it before it's too late!</p>
+      {/* Persistent Quick Action */}
+      {openStores.length > 0 && (
+        <div className="fixed bottom-10 left-0 right-0 px-6 z-50 pointer-events-none">
+          <div className="max-w-md mx-auto pointer-events-auto">
+            <div className="bg-[#1A1F2B] p-2 pr-4 rounded-[28px] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.6)] border border-white/5 flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="w-14 h-14 bg-indigo-600 rounded-[22px] flex items-center justify-center text-2xl shadow-inner">
+                  🥃
+                </div>
+                <div>
+                  <p className="text-[9px] font-black uppercase text-indigo-400 tracking-widest leading-none mb-1">Top Recommendation</p>
+                  <p className="text-white font-black text-sm tracking-tight truncate max-w-[150px]">{openStores[0].name}</p>
+                  <p className="text-[10px] text-slate-500 font-bold leading-none mt-1">Closes {openStores[0].closingTime}</p>
+                </div>
               </div>
-            </div>
-            <div className="flex flex-col items-end">
-               <span className="text-xs opacity-80">Next Closing</span>
-               <span className="font-mono font-black text-xl">{state.stores[0].closingTime}</span>
+              <a 
+                href={openStores[0].mapUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="bg-indigo-600 hover:bg-indigo-500 text-white h-12 px-6 rounded-2xl text-[10px] font-black uppercase tracking-[0.1em] transition-all flex items-center shadow-lg shadow-indigo-600/20"
+              >
+                Directions
+              </a>
             </div>
           </div>
-        </footer>
+        </div>
       )}
     </div>
   );

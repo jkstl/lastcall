@@ -4,64 +4,89 @@ import { Store } from '../types';
 
 interface StoreCardProps {
   store: Store;
+  isClosed?: boolean;
 }
 
-export const StoreCard: React.FC<StoreCardProps> = ({ store }) => {
-  const urgencyColors = {
-    low: 'bg-green-500/10 border-green-500/50 text-green-400',
-    medium: 'bg-yellow-500/10 border-yellow-500/50 text-yellow-400',
-    high: 'bg-red-500/10 border-red-500/50 text-red-400'
-  };
-
-  const statusColors = {
-    'Open': 'text-green-400',
-    'Closed': 'text-gray-500',
-    'Closing Soon': 'text-orange-400'
-  };
-
+export const StoreCard: React.FC<StoreCardProps> = ({ store, isClosed }) => {
+  const isClosingSoon = store.urgency === 'high' && store.status === 'Open';
+  
   return (
-    <div className={`p-5 rounded-2xl border transition-all hover:scale-[1.02] ${urgencyColors[store.urgency]}`}>
-      <div className="flex justify-between items-start mb-2">
-        <h3 className="text-xl font-bold truncate pr-4">{store.name}</h3>
-        <span className={`px-2 py-1 rounded-md text-xs font-bold uppercase tracking-wider bg-black/30 border border-white/10 ${statusColors[store.status === 'Open' ? (store.urgency === 'high' ? 'Closing Soon' : 'Open') : 'Closed']}`}>
-          {store.status === 'Open' && store.urgency === 'high' ? 'Closing Soon' : store.status}
-        </span>
-      </div>
-      
-      <p className="text-sm opacity-80 mb-4 flex items-center">
-        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-        {store.address}
-      </p>
+    <div className={`
+      relative overflow-hidden rounded-3xl transition-all duration-500 flex flex-col h-full
+      ${isClosed 
+        ? 'bg-white/[0.02] border border-white/5 opacity-40 grayscale' 
+        : 'bg-[#121620] border border-white/10 hover:border-indigo-500/40 hover:translate-y-[-2px] hover:shadow-[0_20px_40px_-15px_rgba(79,70,229,0.15)]'
+      }
+    `}>
+      {/* Decorative subtle gradient background */}
+      {!isClosed && (
+        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 blur-[40px] rounded-full -mr-16 -mt-16 pointer-events-none" />
+      )}
 
-      <div className="flex justify-between items-center mt-auto">
-        <div className="flex flex-col">
-          <span className="text-[10px] uppercase opacity-60 font-bold tracking-widest">Closing Time</span>
-          <span className="text-lg font-mono font-bold">{store.closingTime}</span>
+      <div className="p-6 flex flex-col h-full">
+        {/* Header Section */}
+        <div className="flex justify-between items-start gap-4 mb-6">
+          <div className="flex-1 min-w-0">
+            <h3 className={`text-xl font-bold tracking-tight leading-tight ${isClosed ? 'text-slate-400' : 'text-white'}`}>
+              {store.name}
+            </h3>
+            <p className="text-xs text-slate-500 mt-2 line-clamp-2 leading-relaxed font-medium">
+              {store.address}
+            </p>
+          </div>
+          
+          <div className={`
+            shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border
+            ${isClosed 
+              ? 'bg-slate-800 text-slate-500 border-slate-700' 
+              : isClosingSoon 
+                ? 'bg-amber-500/10 text-amber-500 border-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.1)]'
+                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-[0_0_15px_rgba(52,211,153,0.1)]'
+            }
+          `}>
+            {isClosed ? 'Closed' : isClosingSoon ? 'Closing Soon' : 'Open'}
+          </div>
         </div>
-        
-        <a 
-          href={store.mapUrl} 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors"
-        >
-          <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-          </svg>
-        </a>
+
+        {/* Footer Info Section */}
+        <div className="mt-auto pt-6 flex items-end justify-between border-t border-white/5">
+          <div className="space-y-0.5">
+            <span className="block text-[10px] uppercase text-slate-500 font-bold tracking-[0.2em]">
+              {isClosed ? 'Closed Since' : 'Closing Time'}
+            </span>
+            <div className="flex items-baseline gap-1">
+              <span className={`text-2xl font-mono font-bold tracking-tighter ${isClosed ? 'text-slate-500' : isClosingSoon ? 'text-amber-500' : 'text-white'}`}>
+                {store.closingTime}
+              </span>
+            </div>
+          </div>
+
+          <a 
+            href={store.mapUrl} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className={`
+              flex items-center justify-center w-12 h-12 rounded-2xl transition-all duration-300
+              ${isClosed 
+                ? 'bg-slate-800 text-slate-600 cursor-not-allowed' 
+                : 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:scale-110 active:scale-95'
+              }
+            `}
+            title="Open in Maps"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+            </svg>
+          </a>
+        </div>
       </div>
       
-      {store.urgency === 'high' && (
-        <div className="mt-4 pt-3 border-t border-red-500/20">
-          <div className="flex items-center text-red-400 text-sm font-bold animate-pulse">
-            <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-            </svg>
-            Hurry! This location is closing very soon.
-          </div>
+      {/* High Urgency Banner */}
+      {isClosingSoon && !isClosed && (
+        <div className="bg-gradient-to-r from-amber-500 to-orange-500 py-1.5 px-6 text-center">
+          <p className="text-[9px] font-black text-black uppercase tracking-[0.25em]">
+            Urgent Call • Move Fast
+          </p>
         </div>
       )}
     </div>
