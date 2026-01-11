@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Last Call: Liquor Store Tracker",
+  "description": "A high-utility real-time dashboard that finds the nearest liquor and beer stores, providing instant alerts on closing times using Google Maps data.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
