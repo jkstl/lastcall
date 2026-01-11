@@ -20,4 +20,5 @@ export interface AppState {
   loading: boolean;
   error: string | null;
   location: Location | null;
+  notificationsEnabled: boolean;
 }

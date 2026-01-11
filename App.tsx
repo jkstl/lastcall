@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Store, Location, AppState } from './types';
 import { fetchNearbyStores } from './services/geminiService';
 import { StoreCard } from './components/StoreCard';
@@ -10,9 +10,11 @@ const App: React.FC = () => {
     loading: false,
     error: null,
     location: null,
+    notificationsEnabled: false,
   });
 
   const [refreshKey, setRefreshKey] = useState(0);
+  const notifiedStoresRef = useRef<Set<string>>(new Set());
 
   const getGeolocation = useCallback(() => {
     setState(prev => ({ ...prev, loading: true, error: null }));
@@ -67,10 +69,73 @@ const App: React.FC = () => {
     setRefreshKey(prev => prev + 1);
   };
 
-  // Grouping and Sorting Logic
+  const parseTime = (timeStr: string): Date | null => {
+    try {
+      const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (!match) return null;
+      
+      let [_, hours, minutes, period] = match;
+      let h = parseInt(hours, 10);
+      const m = parseInt(minutes, 10);
+      
+      if (period.toUpperCase() === 'PM' && h < 12) h += 12;
+      if (period.toUpperCase() === 'AM' && h === 12) h = 0;
+      
+      const date = new Date();
+      date.setHours(h, m, 0, 0);
+      return date;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const checkClosingSoon = useCallback(() => {
+    if (!state.notificationsEnabled || state.stores.length === 0) return;
+
+    const now = new Date();
+    state.stores.forEach(store => {
+      if (store.status !== 'Open' || notifiedStoresRef.current.has(store.id)) return;
+
+      const closingDate = parseTime(store.closingTime);
+      if (!closingDate) return;
+
+      const diffMs = closingDate.getTime() - now.getTime();
+      const diffMins = diffMs / (1000 * 60);
+
+      // Notify if closing within 30 mins and not already closed
+      if (diffMins > 0 && diffMins <= 30) {
+        if (Notification.permission === 'granted') {
+          new Notification('Last Call Alert!', {
+            body: `${store.name} is closing at ${store.closingTime}. Better hurry!`,
+            icon: 'https://cdn-icons-png.flaticon.com/512/924/924514.png'
+          });
+          notifiedStoresRef.current.add(store.id);
+        }
+      }
+    });
+  }, [state.stores, state.notificationsEnabled]);
+
+  useEffect(() => {
+    const interval = setInterval(checkClosingSoon, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }, [checkClosingSoon]);
+
+  const toggleNotifications = async () => {
+    if (!state.notificationsEnabled) {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        setState(prev => ({ ...prev, notificationsEnabled: true }));
+      } else {
+        alert("Please enable notification permissions in your browser settings to use this feature.");
+      }
+    } else {
+      setState(prev => ({ ...prev, notificationsEnabled: false }));
+      notifiedStoresRef.current.clear();
+    }
+  };
+
   const { openStores, closedStores } = useMemo(() => {
     const open = state.stores.filter(s => s.status === 'Open').sort((a, b) => {
-      // Prioritize "high urgency" (closing soonest)
       if (a.urgency === 'high' && b.urgency !== 'high') return -1;
       if (b.urgency === 'high' && a.urgency !== 'high') return 1;
       return 0;
@@ -98,19 +163,33 @@ const App: React.FC = () => {
             </div>
           </div>
           
-          <button 
-            onClick={handleRefresh}
-            disabled={state.loading}
-            className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.08] transition-all disabled:opacity-30"
-          >
-            <svg className={`w-5 h-5 text-slate-400 ${state.loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
+          <div className="flex items-center space-x-3">
+            <button 
+              onClick={toggleNotifications}
+              className={`w-12 h-12 flex items-center justify-center rounded-2xl border transition-all ${
+                state.notificationsEnabled 
+                ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-400' 
+                : 'bg-white/[0.03] border-white/5 text-slate-500 hover:text-slate-300'
+              }`}
+              title={state.notificationsEnabled ? "Disable closing alerts" : "Enable closing alerts (30m limit)"}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+            </button>
+            <button 
+              onClick={handleRefresh}
+              disabled={state.loading}
+              className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.08] transition-all disabled:opacity-30"
+            >
+              <svg className={`w-5 h-5 text-slate-400 ${state.loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+          </div>
         </div>
       </nav>
 
-      {/* Main Content */}
       <main className="flex-1 w-full max-w-6xl mx-auto px-6 py-12">
         {state.error && (
           <div className="mb-10 p-6 bg-rose-500/5 border border-rose-500/20 rounded-3xl text-rose-400 text-sm font-medium flex items-center">
