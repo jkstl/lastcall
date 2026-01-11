@@ -36,7 +36,6 @@ export const fetchNearbyStores = async (location: Location): Promise<Store[]> =>
     });
 
     const text = response.text || "";
-    // We construct a list of store objects by parsing the text
     const stores: Store[] = parseGeminiResponse(text);
     
     return stores;
@@ -49,24 +48,35 @@ export const fetchNearbyStores = async (location: Location): Promise<Store[]> =>
 const parseGeminiResponse = (text: string): Store[] => {
   const stores: Store[] = [];
   
-  // Strip all markdown artifacts immediately to prevent formatting issues
+  // Strip all markdown artifacts immediately
   const cleanText = text.replace(/[\*#_]/g, '');
   
-  // Split by items that look like "1. Name", "2. Name" etc.
+  // Split by numbered list pattern
   const storeBlocks = cleanText.split(/\d+\.\s+/).filter(block => block.trim().length > 0);
   
   storeBlocks.forEach((block, index) => {
     const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     if (lines.length < 2) return;
 
-    const name = lines[0].trim();
+    // Aggressively strip prefixes like "Name:", "Store Name:", etc.
+    const rawName = lines[0];
+    const name = rawName.replace(/^(Store\s+)?Name:\s*/i, '').trim();
     
     const findValue = (keywords: string[]) => {
       const line = lines.find(l => keywords.some(k => l.toLowerCase().includes(k)));
       if (!line) return null;
       const parts = line.split(':');
-      if (parts.length < 2) return line; // Return full line if no colon
-      return parts.slice(1).join(':').trim();
+      // If there's a label like "Address: 123 Main St", take the part after the colon
+      if (parts.length >= 2) {
+        return parts.slice(1).join(':').trim();
+      }
+      // Otherwise, try to strip the label from the start of the string if it matches
+      let value = line;
+      keywords.forEach(k => {
+        const regex = new RegExp(`^${k}:?\\s*`, 'i');
+        value = value.replace(regex, '');
+      });
+      return value.trim();
     };
 
     const address = findValue(['address']) || "Address unknown";
@@ -78,22 +88,17 @@ const parseGeminiResponse = (text: string): Store[] => {
       status = 'Closed';
     }
     
-    // Heuristic for urgency
     let urgency: 'low' | 'medium' | 'high' = 'low';
     if (status === 'Open') {
       const now = new Date();
       const currentHour = now.getHours();
-      
-      // If it's late or the text mentions "soon"
       if (currentHour >= 21 || block.toLowerCase().includes('soon')) urgency = 'high';
       else if (currentHour >= 18) urgency = 'medium';
     }
 
-    // Construct a high-accuracy Google Maps URL using specific name and address
-    // This avoids the "wrong store" issue caused by index mismatch in grounding chunks
     const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${name} ${address}`)}`;
 
-    if (name && name.length > 2) {
+    if (name && name.length > 1) {
       stores.push({
         id: `store-${index}-${Date.now()}`,
         name,

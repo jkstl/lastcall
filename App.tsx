@@ -102,7 +102,6 @@ const App: React.FC = () => {
       const diffMs = closingDate.getTime() - now.getTime();
       const diffMins = diffMs / (1000 * 60);
 
-      // Notify if closing within 30 mins and not already closed
       if (diffMins > 0 && diffMins <= 30) {
         if (Notification.permission === 'granted') {
           new Notification('Last Call Alert!', {
@@ -116,7 +115,7 @@ const App: React.FC = () => {
   }, [state.stores, state.notificationsEnabled]);
 
   useEffect(() => {
-    const interval = setInterval(checkClosingSoon, 30000); // Check every 30 seconds
+    const interval = setInterval(checkClosingSoon, 30000);
     return () => clearInterval(interval);
   }, [checkClosingSoon]);
 
@@ -134,21 +133,51 @@ const App: React.FC = () => {
     }
   };
 
-  const { openStores, closedStores } = useMemo(() => {
+  const { openStores, closedStores, timeToBuyBooze } = useMemo(() => {
     const open = state.stores.filter(s => s.status === 'Open').sort((a, b) => {
       if (a.urgency === 'high' && b.urgency !== 'high') return -1;
       if (b.urgency === 'high' && a.urgency !== 'high') return 1;
       return 0;
     });
     const closed = state.stores.filter(s => s.status === 'Closed');
-    return { openStores: open, closedStores: closed };
+
+    let boozeTimer = "";
+    if (open.length > 0) {
+      const now = new Date();
+      let latestClosingDate: Date | null = null;
+
+      open.forEach(store => {
+        const d = parseTime(store.closingTime);
+        if (d && (!latestClosingDate || d > latestClosingDate)) {
+          latestClosingDate = d;
+        }
+      });
+
+      if (latestClosingDate) {
+        const diffMs = (latestClosingDate as Date).getTime() - now.getTime();
+        const diffMins = Math.floor(diffMs / (1000 * 60));
+        
+        if (diffMins > 0) {
+          const hours = Math.floor(diffMins / 60);
+          const mins = diffMins % 60;
+          if (hours > 0) {
+            boozeTimer = `${hours}h ${mins}m`;
+          } else {
+            boozeTimer = `${mins}m`;
+          }
+        } else {
+          boozeTimer = "almost no time";
+        }
+      }
+    }
+
+    return { openStores: open, closedStores: closed, timeToBuyBooze: boozeTimer };
   }, [state.stores]);
 
   const allClosed = openStores.length === 0 && state.stores.length > 0;
 
   return (
     <div className="min-h-screen bg-[#080A0F] text-slate-100 flex flex-col font-sans selection:bg-indigo-500/30">
-      {/* Navbar */}
       <nav className="sticky top-0 z-50 bg-[#080A0F]/60 backdrop-blur-2xl px-6 py-6 border-b border-white/[0.03]">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center space-x-4">
@@ -234,7 +263,7 @@ const App: React.FC = () => {
           <div className="space-y-16">
             {openStores.length > 0 && (
               <section>
-                <div className="flex items-end justify-between mb-10">
+                <div className="flex items-end justify-between mb-2">
                   <div>
                     <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-emerald-500 mb-2">Available Now</h2>
                     <h3 className="text-2xl font-black tracking-tight">Nearest Open Shops</h3>
@@ -243,6 +272,11 @@ const App: React.FC = () => {
                     {openStores.length} Options
                   </span>
                 </div>
+                {timeToBuyBooze && (
+                  <p className="text-slate-500 text-xs font-medium mb-10 tracking-wide">
+                    You have <span className="text-indigo-400 font-bold">{timeToBuyBooze}</span> to buy booze!
+                  </p>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                   {openStores.map((store) => (
                     <StoreCard key={store.id} store={store} />
@@ -281,7 +315,6 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Persistent Quick Action */}
       {openStores.length > 0 && (
         <div className="fixed bottom-10 left-0 right-0 px-6 z-50 pointer-events-none">
           <div className="max-w-md mx-auto pointer-events-auto">
